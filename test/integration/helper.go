@@ -47,7 +47,14 @@ import (
 
 var (
 	getEnv = driver.GetEnv
+
+	// setupNetwork will overwrite this value
+	testNetwork = "int-test-network"
 )
+
+func SetTestNetwork(network string) {
+	testNetwork = network
+}
 
 var logWaitStrategies = map[string]string{
 	ExtContainer:  "listening on",
@@ -496,17 +503,17 @@ func (r *IntHelper) prepareDockerCompose(ctx context.Context, tmpDir string) {
 	// create a new network for each test to avoid container DNS name conflicts
 	// for parallel running
 	testName := r.t.Name()
-	localNetwork, err := utils.EnsureNetworkExist(context.Background(), testName)
-	require.NoError(r.t, err, "failed to create network")
-	localNetworkName := localNetwork.Name
+	//localNetwork, err := utils.CreateNetwork(context.Background(), testName)
+	//require.NoError(r.t, err, "failed to create network")
+	localNetworkName := testNetwork
 
-	r.t.Cleanup(func() {
-		r.t.Logf("teardown docker network %s from %s", localNetworkName, testName)
-		if localNetwork != nil {
-			err := localNetwork.Remove(ctx)
-			require.NoError(r.t, err, "failed to remove network")
-		}
-	})
+	//r.t.Cleanup(func() {
+	//	r.t.Logf("teardown docker network %s from %s", localNetworkName, testName)
+	//	//if localNetwork != nil {
+	//	//	err := localNetwork.Remove(ctx)
+	//	//	require.NoError(r.t, err, "failed to remove network")
+	//	//}
+	//})
 
 	// another seemingly possible way to do this is instead of using template
 	// docker-compose file is to use envs in docker-compose.yml, but it doesn't work
@@ -514,7 +521,7 @@ func (r *IntHelper) prepareDockerCompose(ctx context.Context, tmpDir string) {
 
 	// here we generate a new docker-compose.yml file with the new network from template
 	composeFile := filepath.Join(tmpDir, "docker-compose.yml")
-	err = utils.CreateComposeFile(composeFile, "./docker-compose.yml.template",
+	err := utils.CreateComposeFile(composeFile, "./docker-compose.yml.template",
 		utils.ComposeConfig{
 			Network: localNetworkName,
 		})

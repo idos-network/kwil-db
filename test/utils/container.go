@@ -10,8 +10,8 @@ import (
 	"github.com/testcontainers/testcontainers-go/network"
 )
 
-// EnsureNetworkExist creates a new docker network with a random UUID name.
-func EnsureNetworkExist(ctx context.Context, testName string) (
+// CreateNetwork creates a new docker network with a random UUID name.
+func CreateNetwork(ctx context.Context) (
 	*testcontainers.DockerNetwork, error) {
 	net, err := network.New(ctx,
 		network.WithCheckDuplicate(),
@@ -22,9 +22,9 @@ func EnsureNetworkExist(ctx context.Context, testName string) (
 	)
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to create docker network for %s: %w", testName, err)
+		return nil, fmt.Errorf("failed to create docker network: %w", err)
 	} else {
-		fmt.Printf("docker network created: %s(%s) for %s\n", net.Name, net.ID, testName)
+		fmt.Printf("docker network created: %s(%s)\n", net.Name, net.ID)
 		return net, nil
 	}
 }
