@@ -19,6 +19,7 @@ import (
 	"runtime"
 	"sort"
 	"strconv"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -50,6 +51,9 @@ var (
 
 	// setupNetwork will overwrite this value
 	testNetwork = "int-test-network"
+
+	// dhcpMux is used to avoid dhcp ip collision
+	dhcpMux sync.Mutex
 )
 
 func SetTestNetwork(network string) {
@@ -464,6 +468,10 @@ func (r *IntHelper) Setup(ctx context.Context, services []string) {
 	r.t.Logf("create test directory: %s for %s", tmpDir, r.t.Name())
 
 	r.prepareDockerCompose(ctx, tmpDir)
+
+	// dhcp mux
+	dhcpMux.Lock()
+	defer dhcpMux.Unlock()
 
 	if r.cfg.WithGanache {
 		// NOTE: it's more natural and easier if able to configure oracle

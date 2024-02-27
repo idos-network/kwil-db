@@ -431,6 +431,14 @@ services:
       - test test test test test test test test test test test junk
       - --chain.chainId
       - "5"
+    healthcheck:
+      # base image has no tools available for checking connectivity
+      # 2161 is 8545 in HEX
+      #test: ["CMD-SHELL", "cat /proc/1/net/tcp | grep -q 00000000:2161"]
+      test: ["CMD", "true"]
+      interval: 1s
+      timeout: 1s
+      retries: 5
 
 networks:
   {{ .Network }}:
