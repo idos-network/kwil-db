@@ -118,7 +118,6 @@ func Test_EventStore(t *testing.T) {
 					Body: []byte("hello"),
 					Type: "test",
 				}
-				id := event.ID()
 
 				err = e.Store(ctx, event.Body, event.Type)
 				require.NoError(t, err)
@@ -127,10 +126,6 @@ func Test_EventStore(t *testing.T) {
 				events, err := e.GetUnreceivedEvents(ctx)
 				require.NoError(t, err)
 				require.Len(t, events, 1)
-
-				// Mark event as received
-				err = MarkReceived(ctx, tx, id)
-				require.NoError(t, err)
 
 				// GetEvents should still return the event
 				events, err = GetEvents(ctx, tx)

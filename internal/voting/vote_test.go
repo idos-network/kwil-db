@@ -234,11 +234,6 @@ func Test_Voting(t *testing.T) {
 				err = voting.ApproveResolution(ctx, db, events[2].ID(), 10, []byte("a"))
 				require.NoError(t, err)
 
-				containsBody, err := voting.FilterExistsNoBody(ctx, db, ids...)
-				require.NoError(t, err)
-
-				assert.Equal(t, len(containsBody), 1)
-
 				// delete and process all
 				err = voting.DeleteResolutions(ctx, db, ids...)
 				require.NoError(t, err)
@@ -260,9 +255,9 @@ func Test_Voting(t *testing.T) {
 			fn: func(t *testing.T, db sql.DB) {
 				ctx := context.Background()
 
-				containsBody, err := voting.FilterExistsNoBody(ctx, db, types.NewUUIDV5([]byte("ss")))
-				require.NoError(t, err)
-				require.Empty(t, containsBody)
+				// containsBody, err := voting.FilterExistsNoBody(ctx, db, types.NewUUIDV5([]byte("ss")))
+				// require.NoError(t, err)
+				// require.Empty(t, containsBody)
 
 				processed, err := voting.FilterNotProcessed(ctx, db, types.NewUUIDV5([]byte("ss")))
 				require.NoError(t, err)

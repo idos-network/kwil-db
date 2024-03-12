@@ -211,24 +211,24 @@ func (r *TxApp) Execute(ctx TxContext, tx *transactions.Transaction) *TxResponse
 
 // Begin signals that a new block has begun.
 // It contains information on any validators whos power should be updated.
-func (r *TxApp) Begin(ctx context.Context) error {
+func (r *TxApp) Begin(ctx context.Context) (sql.OuterTx, error) {
 	if r.currentTx != nil {
-		return errors.New("txapp misuse: cannot begin a new block while a transaction is in progress")
+		return nil, errors.New("txapp misuse: cannot begin a new block while a transaction is in progress")
 	}
 
 	if r.genesisTx != nil {
 		r.currentTx = r.genesisTx
-		return nil
+		return r.currentTx, nil
 	}
 
 	tx, err := r.Database.BeginTx(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	r.currentTx = tx
 
-	return nil
+	return r.currentTx, nil
 }
 
 // Finalize signals that a block has been finalized.
@@ -406,6 +406,15 @@ func (r *TxApp) processVotes(ctx context.Context, blockheight int64) error {
 		return err
 	}
 
+	// This is to ensure that the nodes that never get to vote on this event due to limitation
+	// per block vote sizes, they never get to vote and essentially delete the event
+	// So this is handled instead when the nodes are approved.
+	// TODO: We need to figure out the consequences of resolutions getting expired due to the vote limits set per block. There can be scenarios where the events are observed by the nodes, but before they can vote, the event gets expired. rare but possible in the situations with higher event traffic.
+	err = deleteEvents(ctx, r.currentTx, markProcessedIds...)
+	if err != nil {
+		return err
+	}
+
 	// now we will apply credits if gas is enabled
 	if r.GasEnabled {
 		for pubKey, amount := range credits {
@@ -448,10 +457,6 @@ func (c creditMap) applyResolution(res *resolutions.Resolution) {
 	}
 
 	bodyCost := big.NewInt(ValidatorVoteBodyBytePrice * int64(len(res.Body)))
-	if res.DoubleProposerVote { // if the proposer ALSO submitted a vote id, refund that as well
-		bodyCost.Add(bodyCost, ValidatorVoteIDPrice)
-	}
-
 	currentBalance, ok := c[string(res.Proposer)]
 	if !ok {
 		currentBalance = big.NewInt(0)
@@ -550,24 +555,23 @@ func (r *TxApp) ProposerTxs(ctx context.Context, txNonce uint64, maxTxsSize int6
 	if err != nil {
 		return nil, err
 	}
-	// Limit upto only 50 VoteBodies per block
-	if len(events) > 50 {
-		events = events[:50]
-	}
 
 	ids := make([]types.UUID, 0, len(events))
 	for _, event := range events {
 		ids = append(ids, event.ID())
 	}
 
-	doesNotHaveBody, err := voting.FilterExistsNoBody(ctx, readTx, ids...)
+	// Should instead check if a resolution exists for these events already?
+	resolutions, err := voting.FilterNonExistingResolutions(ctx, readTx, ids...)
 	if err != nil {
 		return nil, err
 	}
 
-	notProcessed, err := voting.FilterNotProcessed(ctx, readTx, doesNotHaveBody...)
-	if err != nil {
-		return nil, err
+	// Is thre any reason to check for notProcessed events here? Becase event store will never have events that are already processed.
+
+	// Limit upto only 50 VoteBodies per block , moving this below so that, the proposerTxs are never empty and to have some fairness among events.
+	if len(resolutions) > 50 {
+		resolutions = resolutions[:50]
 	}
 
 	eventMap := make(map[types.UUID]*types.VotableEvent)
@@ -576,7 +580,7 @@ func (r *TxApp) ProposerTxs(ctx context.Context, txNonce uint64, maxTxsSize int6
 	}
 
 	finalEvents := make([]*types.VotableEvent, 0)
-	for _, id := range notProcessed {
+	for _, id := range resolutions {
 		event, ok := eventMap[id]
 		if !ok {
 			// this should never happen

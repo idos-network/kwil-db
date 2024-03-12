@@ -88,12 +88,6 @@ func Test_Routes(t *testing.T) {
 
 					return nil
 				}
-				resolutionContainsBody = func(ctx context.Context, db sql.DB, id types.UUID) (bool, error) {
-					return true, nil
-				}
-				isProcessed = func(ctx context.Context, db sql.DB, id types.UUID) (bool, error) {
-					return true, nil
-				}
 				getVoterPower = func(ctx context.Context, db sql.DB, identifier []byte) (int64, error) {
 					return 1, nil
 				}
@@ -131,12 +125,7 @@ func Test_Routes(t *testing.T) {
 
 					return nil
 				}
-				resolutionContainsBody = func(ctx context.Context, db sql.DB, id types.UUID) (bool, error) {
-					return true, nil
-				}
-				isProcessed = func(ctx context.Context, db sql.DB, id types.UUID) (bool, error) {
-					return true, nil
-				}
+
 				getVoterPower = func(ctx context.Context, db sql.DB, identifier []byte) (int64, error) {
 					return 1, nil
 				}
@@ -192,10 +181,6 @@ func Test_Routes(t *testing.T) {
 				createResolution = func(ctx context.Context, db sql.DB, event *types.VotableEvent, expiration int64, proposer []byte) error {
 					return nil
 				}
-
-				hasVoted = func(ctx context.Context, db sql.DB, resolutionID types.UUID, voter []byte) (bool, error) {
-					return true, nil
-				}
 				getVoterPower = func(ctx context.Context, db sql.DB, identifier []byte) (int64, error) {
 					return 1, nil
 				}
@@ -230,10 +215,6 @@ func Test_Routes(t *testing.T) {
 					deleteCount++
 
 					return nil
-				}
-
-				hasVoted = func(ctx context.Context, db sql.DB, resolutionID types.UUID, voter []byte) (bool, error) {
-					return true, nil
 				}
 
 				getVoterPower = func(ctx context.Context, db sql.DB, identifier []byte) (int64, error) {

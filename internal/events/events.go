@@ -152,6 +152,13 @@ func DeleteEvent(ctx context.Context, db sql.DB, id types.UUID) error {
 	return err
 }
 
+// DeleteEvents deletes a list of events from the event store.
+// It is idempotent. If the event does not exist, it will not return an error.
+func DeleteEvents(ctx context.Context, db sql.DB, ids ...types.UUID) error {
+	_, err := db.Execute(ctx, deleteEvents, types.UUIDArray(ids))
+	return err
+}
+
 // GetUnreceivedEvents retrieves events that are neither received by the network nor previously broadcasted.
 // An event is considered "received" only after its inclusion in a block.
 // The function excludes events that have been broadcasted but are still pending in the mempool, awaiting block inclusion.
@@ -194,18 +201,36 @@ func (e *EventStore) GetUnreceivedEvents(ctx context.Context) ([]*types.VotableE
 	return events, nil
 }
 
+func (e *EventStore) FilterObservedEvents(ctx context.Context, observedIDs []types.UUID) ([]types.UUID, error) {
+	readTx, err := e.eventWriter.BeginReadTx(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer readTx.Rollback(ctx) // only reading, so we can always rollback
+
+	res, err := readTx.Execute(ctx, filterObservedEvents, types.UUIDArray(observedIDs))
+	if err != nil {
+		return nil, err
+	}
+
+	var ids []types.UUID
+	for _, row := range res.Rows {
+		id, ok := row[0].(types.UUID)
+		if !ok {
+			return nil, fmt.Errorf("expected id to be types.UUID, got %T", row[0])
+		}
+		ids = append(ids, id)
+	}
+
+	return ids, nil
+}
+
 // MarkBroadcasted marks the event as broadcasted.
 func (e *EventStore) MarkBroadcasted(ctx context.Context, ids []types.UUID) error {
 	e.writerMtx.Lock()
 	defer e.writerMtx.Unlock()
 
 	_, err := e.eventWriter.Execute(ctx, markBroadcasted, types.UUIDArray(ids))
-	return err
-}
-
-// MarkReceived marks that an event has been received by the network, and should not be re-broadcasted.
-func MarkReceived(ctx context.Context, db sql.DB, id types.UUID) error {
-	_, err := db.Execute(ctx, markReceived, id[:])
 	return err
 }
 

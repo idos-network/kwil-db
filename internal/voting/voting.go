@@ -58,10 +58,8 @@ func initTables(ctx context.Context, db sql.DB) error {
 }
 
 // Approve approves a resolution from a voter.
-// If the resolution does not yet exist, it will be created.
-// If created, it will not be given a body, and can be given a body later.
-// If the resolution already exists, it will simply track that the voter
-// has approved the resolution, and will not change the body or expiration.
+// If the resolution does not yet exist, it will be errored,
+// Validators should only vote on existing resolutions.
 // If the voter does not exist, an error will be returned.
 // If the voter has already approved the resolution, no error will be returned.
 // If the resolution has already been processed, no error will be returned.
@@ -72,24 +70,21 @@ func ApproveResolution(ctx context.Context, db sql.DB, resolutionID types.UUID, 
 	}
 	defer tx.Rollback(ctx)
 
-	alreadyProcessed, err := IsProcessed(ctx, tx, resolutionID)
-	if err != nil {
-		return err
-	}
-	if alreadyProcessed {
-		return nil
-	}
+	// TODO: Do we need this check???
+	// alreadyProcessed, err := IsProcessed(ctx, tx, resolutionID)
+	// if err != nil {
+	// 		return err
+	// }
+	// if alreadyProcessed {
+	// 		return nil
+	// }
 
-	// we need to ensure that the resolution ID exists
-	_, err = tx.Execute(ctx, ensureResolutionIDExists, resolutionID[:], expiration)
-	if err != nil {
-		return err
-	}
-
+	// Expectation is that the resolution is already created when the voteBody is submitted. and nodes wont submit the voteIDs for events which doesn't have resolutions.
 	userId := types.NewUUIDV5(from)
 
 	// if the voter does not exist, the following will error
 	// if the vote from the voter already exists, nothing will happen
+	// if the resolution doesn't exist, the following would error
 	_, err = tx.Execute(ctx, addVote, resolutionID[:], userId[:])
 	if err != nil {
 		return err
@@ -98,9 +93,9 @@ func ApproveResolution(ctx context.Context, db sql.DB, resolutionID types.UUID, 
 	return tx.Commit(ctx)
 }
 
-// CreateResolution creates a vote, by submitting a body of a vote, a topic
-// and an expiration.  The expiration should be a blockheight.
-// If the resolution already exists, it will not be changed.
+// CreateResolution creates a resolution and subm vote
+// The expiration should be a blockheight.
+// If the resolution already exists: // TODO: should we error out or do nothing?.
 // If the resolution was already processed, nothing will happen.
 func CreateResolution(ctx context.Context, db sql.DB, event *types.VotableEvent, expiration int64, voteBodyProposer []byte) error {
 	tx, err := db.BeginTx(ctx)
@@ -109,36 +104,18 @@ func CreateResolution(ctx context.Context, db sql.DB, event *types.VotableEvent,
 	}
 	defer tx.Rollback(ctx)
 
-	alreadyProcessed, err := IsProcessed(ctx, tx, event.ID())
-	if err != nil {
-		return err
-	}
-	if alreadyProcessed {
-		return fmt.Errorf(`%w: resolution id: "%s"`, ErrAlreadyProcessed, event.ID().String())
-	}
-
-	// if it already contains a body, we want to return.
-	// this avoids a bug where a second body proposer can steal
-	// the proposer reward, due to the upsert executed at the end
-	// of this function.
-	containsBody, err := ResolutionContainsBody(ctx, tx, event.ID())
-	if err != nil {
-		return err
-	}
-	if containsBody {
-		return fmt.Errorf(`%w: resolution id: "%s"`, ErrResolutionAlreadyHasBody, event.ID().String())
-	}
+	// TODO: Do we need this check??? Probably not, as only non processed events exist in the event store and when processed the events are deleted from the event store.
+	// alreadyProcessed, err := IsProcessed(ctx, tx, resolutionID)
+	// if err != nil {
+	// 		return err
+	// }
+	// if alreadyProcessed {
+	// 		return nil
+	// }
 
 	id := event.ID()
 
-	// Check if the proposer has already submitted the VoteID transaction
-	// if yes, update the extraVoteID in the resolutions table so that the node can be refunded correctly.
-	voted, err := HasVoted(ctx, tx, id, voteBodyProposer)
-	if err != nil {
-		return err
-	}
-
-	_, err = tx.Execute(ctx, upsertResolution, id[:], event.Body, event.Type, expiration, voteBodyProposer, voted)
+	_, err = tx.Execute(ctx, insertResolution, id[:], event.Body, event.Type, expiration, voteBodyProposer, false)
 	if err != nil {
 		return err
 	}
@@ -344,29 +321,6 @@ func MarkProcessed(ctx context.Context, db sql.DB, ids ...types.UUID) error {
 	return err
 }
 
-// ResolutionContainsBody returns true if the resolution has a body.
-func ResolutionContainsBody(ctx context.Context, db sql.DB, id types.UUID) (bool, error) {
-	res, err := db.Execute(ctx, containsBody, id[:])
-	if err != nil {
-		return false, err
-	}
-
-	if len(res.Rows) == 0 {
-		return false, nil
-	}
-
-	if len(res.Rows[0]) != 1 {
-		// this should never happen, just for safety
-		return false, fmt.Errorf("invalid number of columns returned. this is an internal bug")
-	}
-	containsBody, ok := res.Rows[0][0].(bool)
-	if !ok {
-		return false, fmt.Errorf("invalid type for containsBody (%T). this is an internal bug", res.Rows[0][0])
-	}
-
-	return containsBody, nil
-}
-
 // IsProcessed checks if a vote has been marked as processed.
 func IsProcessed(ctx context.Context, tx sql.DB, resolutionID types.UUID) (bool, error) {
 	res, err := tx.Execute(ctx, alreadyProcessed, resolutionID[:])
@@ -397,35 +351,42 @@ func FilterNotProcessed(ctx context.Context, db sql.DB, ids ...types.UUID) ([]ty
 	return processed, nil
 }
 
-// FilterExistsNoBody takes a set of resolutions and returns the ones that do exist but do not have a body.
-func FilterExistsNoBody(ctx context.Context, db sql.DB, ids ...types.UUID) ([]types.UUID, error) {
-	res, err := db.Execute(ctx, returnNoBody, types.UUIDArray(ids))
+// FilterNonExistingResolutions takes a set of resolution ids and returns the ones for which resolutions does not already exist.
+func FilterNonExistingResolutions(ctx context.Context, db sql.DB, ids ...types.UUID) ([]types.UUID, error) {
+	res, err := db.Execute(ctx, filterNonExistingResolutions, types.UUIDArray(ids))
 	if err != nil {
 		return nil, err
 	}
 
-	processed := make([]types.UUID, len(res.Rows))
+	resolutions := make([]types.UUID, len(res.Rows))
 	for i, row := range res.Rows {
 		if len(row) != 1 {
 			// this should never happen, just for safety
 			return nil, fmt.Errorf("invalid number of columns returned. this is an internal bug")
 		}
-		processed[i] = types.UUID(row[0].([]byte))
+		resolutions[i] = types.UUID(row[0].([]byte))
 	}
 
-	return processed, nil
+	return resolutions, nil
 }
 
-// HasVoted checks if a voter has voted on a resolution.
-func HasVoted(ctx context.Context, tx sql.DB, resolutionID types.UUID, from []byte) (bool, error) {
-	userId := types.NewUUIDV5(from)
-
-	res, err := tx.Execute(ctx, hasVoted, resolutionID[:], userId[:])
+// OutstandingResolutions returns all resolutions that have not been approved yet.
+func OutstandingResolutions(ctx context.Context, db sql.DB) ([]types.UUID, error) {
+	res, err := db.Execute(ctx, outstandingResolutions)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 
-	return len(res.Rows) != 0, nil
+	resolutions := make([]types.UUID, len(res.Rows))
+	for i, row := range res.Rows {
+		if len(row) != 1 {
+			// this should never happen, just for safety
+			return nil, fmt.Errorf("invalid number of columns returned. this is an internal bug")
+		}
+		resolutions[i] = types.UUID(row[0].([]byte))
+	}
+
+	return resolutions, nil
 }
 
 // GetValidatorPower gets the power of a voter.

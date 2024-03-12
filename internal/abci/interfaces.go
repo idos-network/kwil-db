@@ -4,6 +4,7 @@ import (
 	"context"
 	"math/big"
 
+	"github.com/kwilteam/kwil-db/common/sql"
 	"github.com/kwilteam/kwil-db/core/types"
 	"github.com/kwilteam/kwil-db/core/types/transactions"
 
@@ -56,7 +57,7 @@ type TxApp interface {
 	GenesisInit(ctx context.Context, validators []*types.Validator, accounts []*types.Account, initialHeight int64) error
 	ApplyMempool(ctx context.Context, tx *transactions.Transaction) error
 	// Begin signals that a new block has begun.
-	Begin(ctx context.Context) error
+	Begin(ctx context.Context) (sql.OuterTx, error)
 	Finalize(ctx context.Context, blockHeight int64) (apphash []byte, validatorUpgrades []*types.Validator, err error)
 	Commit(ctx context.Context) error
 	Execute(ctx txapp.TxContext, tx *transactions.Transaction) *txapp.TxResponse

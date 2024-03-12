@@ -22,16 +22,22 @@ const (
 		id BYTEA PRIMARY KEY, -- uuid
 		data BYTEA NOT NULL,
 		event_type TEXT NOT NULL,
-		received BOOLEAN NOT NULL DEFAULT FALSE, -- received is set to true if the network has received the vote for this event
-		broadcasted BOOLEAN NOT NULL DEFAULT FALSE -- broadcasted is set to true if the event has been broadcasted by the validator. It may or may not have been received by the network
+		// broadcasted BOOLEAN NOT NULL DEFAULT FALSE -- broadcasted is set to true if the event has been broadcasted by the validator. It may or may not have been received by the network
 	);`
 	dropEventsTable = `DROP TABLE IF EXISTS ` + schemaName + `.events;`
 
-	insertEventIdempotent  = `INSERT INTO ` + schemaName + `.events (id, data, event_type) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING;`
-	deleteEvent            = `DELETE FROM ` + schemaName + `.events WHERE id = $1;`
+	insertEventIdempotent = `INSERT INTO ` + schemaName + `.events (id, data, event_type) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING;`
+	deleteEvent           = `DELETE FROM ` + schemaName + `.events WHERE id = $1;`
+
+	deleteEvents           = `DELETE FROM ` + schemaName + `.events WHERE id =ANY($1);`
 	getEvents              = `SELECT data, event_type FROM ` + schemaName + `.events;`
-	getUnbroadcastedEvents = `SELECT data, event_type FROM ` + schemaName + `.events WHERE NOT received AND NOT broadcasted;`
-	markReceived           = `UPDATE ` + schemaName + `.events SET received = TRUE WHERE id = $1;`
+	getUnbroadcastedEvents = `SELECT data, event_type FROM ` + schemaName + `.events WHERE NOT broadcasted;`
+
+	// FilterObservedEvents returns the list of events that are observed by the node and not yet broadcasted.
+	filterObservedEvents = `SELECT unnested.id
+	FROM unnest($1::BYTEA[]) AS unnested(id)
+	LEFT JOIN ` + schemaName + `.events AS res ON unnested.id = res.id
+	WHERE res.id IS NOT NULL AND res.broadcasted = FALSE;`
 
 	// mark list of events as broadcasted.
 	markBroadcasted = `UPDATE ` + schemaName + `.events SET broadcasted = TRUE WHERE id =ANY($1);`
