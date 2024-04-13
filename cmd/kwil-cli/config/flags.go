@@ -46,6 +46,11 @@ func init() {
 	configPath := filepath.Join(dirname, defaultConfigDirName)
 	DefaultConfigDir = configPath
 	defaultConfigFile = filepath.Join(configPath, defaultConfigFileName)
+
+	configFile, present := os.LookupEnv("KWIL_CLI_CONFIG_FILE")
+	if !present {
+		defaultConfigFile = configFile
+	}
 }
 
 func BindGlobalFlags(fs *pflag.FlagSet) {
